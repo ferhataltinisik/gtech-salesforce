@@ -1,0 +1,52 @@
+@RestResource(urlMapping='/*')
+global class InvoicesApiBatchable implements Database.Batchable<SObject>, Database.AllowsCallouts {
+    private String token;
+    
+    global Database.QueryLocator start(Database.BatchableContext bc) {
+        String query = 'SELECT Id FROM Opportunity';
+        
+        // Retrieve token from custom setting
+        InvoicesApiSettings__c settings = InvoicesApiSettings__c.getValues('default');
+        token = settings.Token__c;
+        
+        return Database.getQueryLocator(query);
+    }
+    
+    global void execute(Database.BatchableContext bc, List<SObject> scope) {
+        List<Client_Object_c> clientList = new List<Client_Object_c>();
+        List<ClientListResponse.Data> allClients = new List<ClientListResponse.Data>();
+
+        // Get all clients in a single API call
+        Http httpClients = new Http();
+        HttpRequest requestClients = new HttpRequest();
+        requestClients.setEndpoint('https://user-api-v2.simplybook.me/admin/clients?on_page=1000');
+        requestClients.setMethod('GET');
+        requestClients.setHeader('Content-Type', 'application/json');
+        requestClients.setHeader('X-Company-Login', 'masterdrivers');
+        requestClients.setHeader('X-Token', token);
+        
+        HttpResponse responseClients = httpClients.send(requestClients);
+        if(responseClients.getStatusCode() != 200) {
+            System.debug('The status code returned was not expected: ' + responseClients.getStatusCode() + ' ' + responseClients.getStatus());
+        } else {
+            Type resultType = Type.forName('ClientListResponse');
+            ClientListResponse deserializeResults = (ClientListResponse)JSON.deserialize(responseClients.getBody(), resultType);
+
+            for (ClientListResponse.Data clis : deserializeResults.data) {
+                Client_Object_c c = new Client_Object_c();
+                c.address1__c = clis.address1;
+                c.address2__c = clis.address2;
+                c.can_be_edited__c = clis.can_be_edited;
+                c.city__c = clis.city;
+                c.country_id__c = clis.country_id;
+                c.Email__c = clis.email;
+                c.full_address__c = clis.full_address;
+                c.Name__c = clis.name;
+                c.Phone__c = clis.phone;
+                c.Simply_Id__c = clis.id;
+                c.state_id__c = clis.state_id;
+                c.zip__c = clis.zip;
+                clientList.add(c);
+            }
+            System.debug(clientList.size());
+            Database.DMLOptions dmlOpts
